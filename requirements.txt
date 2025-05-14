@@ -1,0 +1,6 @@
+numpy
+pandas
+scipy
+transformers
+tokenizer
+huggingface_hub
