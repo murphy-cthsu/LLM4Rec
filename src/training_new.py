@@ -256,8 +256,8 @@ def main():
     print("-----Begin Setting Up the Training Details-----")
     learning_rate = 1e-3
     batch_size = 20
-    num_pretrained_epochs = 10
-    num_epochs = 100
+    num_pretrained_epochs = 3
+    num_epochs = 5
 
     '''
         Create data loaders

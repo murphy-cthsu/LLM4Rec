@@ -5,6 +5,7 @@ Copyright (c) 2024 Yaochen Zhu
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from transformers import GPT2Model, GPT2Config
