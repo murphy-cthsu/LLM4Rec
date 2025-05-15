@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader
 from transformers import GPT2Model, GPT2Config
 from transformers import GPT2Tokenizer
 
-sys.path.append("libs")
+sys.path.append("src/libs")
 from tokenizer import TokenizerWithUserItemIDTokensBatch
 
 from data import CollaborativeGPTGeneratorBatch
@@ -124,9 +124,10 @@ def main():
         Obtain the tokenizer with user/item tokens
     '''
     print("-----Begin Obtaining the Tokenizer-----")
-    tokenizer_root = os.path.join(pretrained_path, "tokenizer")
+    # tokenizer_root = os.path.join(pretrained_path, "tokenizer")
+    tokenizer_root=pretrained_path
     print(f"Loading pretrained tokenizer from {tokenizer_root}...")
-    vocab_file = os.path.join(tokenizer_root, "vocab_file.json")
+    vocab_file = os.path.join(tokenizer_root, "vocab.json")
     merges_file = os.path.join(tokenizer_root, "merges.txt")
     
     # Check if files exist
@@ -184,7 +185,7 @@ def main():
     '''
     print("-----Begin Instantiating the Pretrained GPT Model-----")
     gpt2model = GPT2Model(config)
-    gpt2_path = os.path.join(pretrained_path, "gpt2", "pytorch_model.bin")
+    gpt2_path = os.path.join(pretrained_path, "pytorch_model.bin")
     print(f"Loading pretrained weights from {gpt2_path}...")
     if not os.path.exists(gpt2_path):
         raise FileNotFoundError(f"Pretrained GPT2 model not found at {gpt2_path}")
