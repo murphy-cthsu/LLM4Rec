@@ -1,0 +1,212 @@
+
+ANALYZING SAMPLE DATA FROM data/sampled_data_with_predicted_class.csv
+================================================================================
+CSV loaded with 100 rows and 125 columns
+
+First few column names:
+  - Class
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  ... plus additional columns
+
+Class distribution in sample data:
+  high-end meat and seafood connoisseur: 49 (49.0%)
+  seasonal fruit and vegetable buyer: 24 (24.0%)
+  frugal meat lover: 10 (10.0%)
+  community event shopper: 9 (9.0%)
+  luxury seafood enthusiast: 8 (8.0%)
+
+Sample column values to understand the session format:
+Column 0 sample: [206787412211, datetime.datetime(2024, 2, 1, 19, 36, 53, 116000), 'load', '澎湖活凍野生明蝦']
+  Parsed: session_id=206787412211, event_type=load, product_id=澎湖活凍野生明蝦
+Column 1 sample: [206787412211, datetime.datetime(2024, 2, 1, 19, 41, 54, 701000), 'load', '澎湖活凍野生明蝦']
+  Parsed: session_id=206787412211, event_type=load, product_id=澎湖活凍野生明蝦
+Column 2 sample: [206787412211, datetime.datetime(2024, 2, 1, 19, 42, 12, 512000), 'purchase', '澎湖活凍野生明蝦']
+  Parsed: session_id=206787412211, event_type=purchase, product_id=澎湖活凍野生明蝦
+Column 3 sample: [202304461943, datetime.datetime(2023, 12, 11, 22, 24, 36, 861000), 'load', '聖凱招牌牛肉麵6入自由選']
+  Parsed: session_id=202304461943, event_type=load, product_id=聖凱招牌牛肉麵6入自由選
+Column 4 sample: [202304461943, datetime.datetime(2023, 12, 11, 22, 25, 57, 894000), 'load', '聖凱招牌牛肉麵3入自由選']
+  Parsed: session_id=202304461943, event_type=load, product_id=聖凱招牌牛肉麵3入自由選
+
+Analyzing 5 sample rows:
+
+Sample 1:
+  Class: high-end meat and seafood connoisseur
+  Example session entry (Column 0): [206787412211, datetime.datetime(2024, 2, 1, 19, 36, 53, 116000), 'load', '澎湖活凍野生明蝦']
+
+Sample 2:
+  Class: high-end meat and seafood connoisseur
+  Example session entry (Column 0): [202304461943, datetime.datetime(2023, 12, 11, 22, 21, 3, 131000), 'load', '宜蘭招牌西魯肉']
+
+Sample 3:
+  Class: seasonal fruit and vegetable buyer
+  Example session entry (Column 0): [205282232852, datetime.datetime(2024, 1, 15, 9, 30, 35, 726000), 'load', '特選智利鮮採櫻桃']
+
+Sample 4:
+  Class: luxury seafood enthusiast
+  Example session entry (Column 0): [208342514655, datetime.datetime(2024, 2, 19, 19, 35, 36, 230000), 'load', '醬漬一口鮑單入自由選']
+
+Sample 5:
+  Class: frugal meat lover
+  Example session entry (Column 0): [209962650435, datetime.datetime(2024, 3, 9, 13, 37, 45, 434000), 'load', '聖凱招牌牛肉麵3入自由選']
+Reading data from data/sampled_data_with_predicted_class.csv...
+Data loaded with 100 rows.
+Extracted user sessions for 100 users
+Found 100 user classifications from LLM
+Filtered users from 100 to 100 based on minimum interactions
+
+Assigned numerical class IDs:
+  Class: community event shopper -> User ID: 0 (assigned to 9 users)
+  Class: frugal meat lover -> User ID: 1 (assigned to 10 users)
+  Class: high-end meat and seafood connoisseur -> User ID: 2 (assigned to 49 users)
+  Class: luxury seafood enthusiast -> User ID: 3 (assigned to 8 users)
+  Class: seasonal fruit and vegetable buyer -> User ID: 4 (assigned to 24 users)
+Found 5 unique classes (now treated as users)
+Found 161 unique products
+
+LLM-generated user class distribution:
+  high-end meat and seafood connoisseur: 49 users (49.0%)
+  seasonal fruit and vegetable buyer: 24 users (24.0%)
+  frugal meat lover: 10 users (10.0%)
+  community event shopper: 9 users (9.0%)
+  luxury seafood enthusiast: 8 users (8.0%)
+
+Dataset prepared and saved to data/user_session_data
+Number of class-based users: 5
+Number of items: 161
+Number of training interactions: 101
+Number of validation interactions: 13
+Number of test interactions: 13
+Number of review texts: 101
+
+Loading mappings and data for prompt generation...
+Successfully loaded mappings.pkl
+Keys in mappings: ['user_map', 'item_map', 'class_id_map', 'class_id_to_name', 'original_to_class_id', 'reverse_item_map', 'user_class', 'class_purchase_data', 'class_load_data']
+Number of classes: 5
+Sample class_id_to_name: [(0, 'community event shopper'), (1, 'frugal meat lover'), (2, 'high-end meat and seafood connoisseur')]
+Number of classes with purchase data: 5
+  Class 2: 82 purchased items
+  Class 4: 14 purchased items
+Number of classes with load data: 5
+  Class 2: 109 loaded items
+  Class 4: 20 loaded items
+Successfully loaded review.pkl with 101 reviews
+Sample review: ('2 reviewed item_119', 'This user is a high-end meat and seafood connoisseur who purchased 超人氣卡拉龍珠(原味).')
+
+Generating collaborative prompts...
+Class 0 (community event shopper): 6 purchases, 9 loads
+  Added purchase prompt: <user_0> has purchased 
+  Added load prompt: <user_0> has viewed/loaded 
+Class 1 (frugal meat lover): 21 purchases, 15 loads
+  Added purchase prompt: <user_1> has purchased 
+  Added load prompt: <user_1> has viewed/loaded 
+Class 2 (high-end meat and seafood connoisseur): 82 purchases, 109 loads
+  Added purchase prompt: <user_2> has purchased 
+  Added load prompt: <user_2> has viewed/loaded 
+Class 3 (luxury seafood enthusiast): 4 purchases, 4 loads
+  Added purchase prompt: <user_3> has purchased 
+  Added load prompt: <user_3> has viewed/loaded 
+Class 4 (seasonal fruit and vegetable buyer): 14 purchases, 20 loads
+  Added purchase prompt: <user_4> has purchased 
+  Added load prompt: <user_4> has viewed/loaded 
+
+Generating content prompts...
+  Added content prompt: <user_2> writes a review for <item_119> :
+  Added content prompt: <user_2> writes a review for <item_142> :
+Processed 101 reviews, encountered 0 errors
+
+Generating recommendation prompts...
+Loaded train_matrix with shape (5, 161), 101 nonzero elements
+  Class 0 (community event shopper): 4 training items
+  Class 0: 6 purchased, 9 loaded item indices
+  Added standard recommendation prompt for class 0
+  Added contextual recommendation prompt for class 0
+  Class 1 (frugal meat lover): 17 training items
+  Class 1: 21 purchased, 15 loaded item indices
+  Added standard recommendation prompt for class 1
+  Added contextual recommendation prompt for class 1
+  Class 2 (high-end meat and seafood connoisseur): 66 training items
+  Class 2: 82 purchased, 109 loaded item indices
+  Added standard recommendation prompt for class 2
+  Added contextual recommendation prompt for class 2
+  Class 3 (luxury seafood enthusiast): 2 training items
+  Class 3: 4 purchased, 4 loaded item indices
+  Added standard recommendation prompt for class 3
+  Added contextual recommendation prompt for class 3
+  Class 4 (seasonal fruit and vegetable buyer): 12 training items
+  Class 4: 14 purchased, 20 loaded item indices
+  Added standard recommendation prompt for class 4
+  Added contextual recommendation prompt for class 4
+
+Generated prompts for CLLM4Rec training and saved to data/user_session_data/prompts:
+  Collaborative prompts: 10
+  Content prompts: 101
+  Recommendation prompts: 10
+
+================================================================================
+INSPECTING DATASET:  data/user_session_data
+================================================================================
+
+CLASS LABEL TO NUMERICAL USER ID MAPPINGS:
+--------------------------------------------------
+Class: community event shopper -> Numerical ID: 0
+Class: frugal meat lover -> Numerical ID: 1
+Class: high-end meat and seafood connoisseur -> Numerical ID: 2
+Class: luxury seafood enthusiast -> Numerical ID: 3
+Class: seasonal fruit and vegetable buyer -> Numerical ID: 4
+
+
+SAMPLE COLLABORATIVE PROMPTS:
+--------------------------------------------------
+
+Purchase prompts:
+Class ID 0 (Type: community event shopper):
+  <user_0> has purchased <item_list>
+Class ID 1 (Type: frugal meat lover):
+  <user_1> has purchased <item_list>
+Class ID 2 (Type: high-end meat and seafood connoisseur):
+  <user_2> has purchased <item_list>
+
+Load/View prompts:
+Class ID 0 (Type: community event shopper):
+  <user_0> has viewed/loaded <item_list>
+Class ID 1 (Type: frugal meat lover):
+  <user_1> has viewed/loaded <item_list>
+Class ID 2 (Type: high-end meat and seafood connoisseur):
+  <user_2> has viewed/loaded <item_list>
+
+
+SAMPLE CONTENT PROMPTS:
+--------------------------------------------------
+Class ID 2 (Type: high-end meat and seafood connoisseur):
+  Prompt: <user_2> writes a review for <item_119> :
+  Content: This user is a high-end meat and seafood connoisseur who purchased 超人氣卡拉龍珠(原味).
+
+Class ID 2 (Type: high-end meat and seafood connoisseur):
+  Prompt: <user_2> writes a review for <item_142> :
+  Content: This user is a high-end meat and seafood connoisseur who purchased 鮮凍智利鮭魚清肉排.
+
+Class ID 2 (Type: high-end meat and seafood connoisseur):
+  Prompt: <user_2> writes a review for <item_38> :
+  Content: This user is a high-end meat and seafood connoisseur who purchased 嫩煎古早味鐵路排骨.
+
+
+SAMPLE RECOMMENDATION PROMPTS:
+--------------------------------------------------
+
+Standard purchase-based prompt:
+Class ID 0 (Type: community event shopper):
+  Prompt: <user_0> has purchased <item_36> <item_26> <item_155>, the user will also purchase:
+  Targets to predict: [160 115  86]
+
+Contextual prompt (with view/load information):
+Class ID 0 (Type: community event shopper):
+  Prompt: <user_0> has viewed <item_36> <item_46> <item_115> <item_49> <item_16> and purchased <item_36> <item_26> <item_155>, the user will also purchase:
+  Targets to predict: [160 115  86]

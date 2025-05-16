@@ -712,7 +712,7 @@ def inspect_dataset(dataset_dir):
 
 if __name__ == "__main__":
     # Analyze a sample of the input CSV
-    load_and_analyze_sample_data("sampled_data_with_predicted_class.csv")
+    load_and_analyze_sample_data("data/sampled_data_with_predicted_class.csv")
     
     # Process the LLM-tagged data and convert to CLLM4Rec format
     dataset_dir = convert_data_for_cllm(
