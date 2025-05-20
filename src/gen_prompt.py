@@ -346,7 +346,7 @@ def convert_data_for_cllm(input_csv, output_dir, dataset_name="user_session_data
                 item_idx = item_map[product_id]
                 
                 # Format: ("class_id reviewed item_Y", "descriptive text with LLM-generated class")
-                prompt = f"{class_id} reviewed item_{item_idx}"
+                prompt = f"<user_{class_id}> reviewed <item_{item_idx}>"
                 content = f"This user is a {class_name} who purchased {product_id}."
                 
                 reviews.append((prompt, content))

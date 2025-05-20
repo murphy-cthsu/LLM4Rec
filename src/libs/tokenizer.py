@@ -1,6 +1,7 @@
 '''
 MIT License
 Copyright (c) 2024 Yaochen Zhu
+Modified for e-commerce data with angle bracket token format
 '''
 
 import re
@@ -22,11 +23,11 @@ class TokenizerWithUserItemIDTokens(GPT2Tokenizer):
         self.user_token_encoder = self._add_user_token_encoder()
         self.item_token_encoder = self._add_item_token_encoder()
         
-        #We add the user/item token encoders to the original vocab encoder
+        # We add the user/item token encoders to the original vocab encoder
         self.encoder.update(self.user_token_encoder)
         self.encoder.update(self.item_token_encoder)
         
-        #We add the corresponding decoders to the original vocab decoder
+        # We add the corresponding decoders to the original vocab decoder
         self.user_token_decoder = {v:k for k,v in self.user_token_encoder.items()}
         self.item_token_decoder = {v:k for k,v in self.item_token_encoder.items()}
         self.decoder.update(self.user_token_decoder)
@@ -34,11 +35,13 @@ class TokenizerWithUserItemIDTokens(GPT2Tokenizer):
         
     
     def _add_user_token_encoder(self):
-        return {"user_{}".format(i):(i+self.vocab_size) 
+        # Using angle bracket format for user tokens
+        return {"<user_{}>".format(i):(i+self.vocab_size) 
                 for i in range(self.num_users)}
     
     def _add_item_token_encoder(self):
-        return {"item_{}".format(j):(j+self.vocab_size+self.num_users)
+        # Using angle bracket format for item tokens
+        return {"<item_{}>".format(j):(j+self.vocab_size+self.num_users)
                 for j in range(self.num_items)}
     
     def _pre_tokenize(self, text):
@@ -46,19 +49,16 @@ class TokenizerWithUserItemIDTokens(GPT2Tokenizer):
             In this function, we break down the sentence that 
             describes user/item features or their historical 
             interactions into pieces, where the ID word like
-            user_i or item_j is kept as a single piece. 
+            <user_i> or <item_j> is kept as a single piece. 
             
             E.g.,
-                text = "This is user_1's comment about item_3 
-                        after he bought the item"
-                pieces = ['This is', 'user_1', "'s comment about", 
-                          'item_3', ' after he bought the item']
-                          
-            Note that we keep the space on the left of a word to 
-            show that the word does not appear on the beginning 
-            part of a sentence.
+                text = "This is <user_1>'s comment about <item_3> 
+                        after he purchased the item"
+                pieces = ['This is', '<user_1>', "'s comment about", 
+                          '<item_3>', ' after he purchased the item']
         '''
-        pattern = r'(user_\d+|item_\d+)'
+        # Updated pattern to match tokens with angle brackets
+        pattern = r'(<user_\d+>|<item_\d+>)'
         matches = re.findall(pattern, text)
         pieces = re.split(pattern, text)
         pieces = [piece.rstrip() for piece in pieces if piece.rstrip()]

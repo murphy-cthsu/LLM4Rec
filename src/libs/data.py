@@ -9,20 +9,16 @@ import pickle
 
 import torch
 from torch.utils.data import Dataset
+import re
 
+'''
+Updated data classes with proper token formats for e-commerce data
+'''
 
 class CollaborativeGPTGeneratorBatch(Dataset):
     """
-    Dataset class for generating collaborative GPT input batches.
-
-    Args:
-        tokenizer (TokenizerWithUserItemIDTokensBatch):
-            Custom tokenizer instance.
-        train_mat (np.ndarray): 
-            Matrix of user-item interactions.
-        max_length (int, optional): 
-            Maximum length of the encoded sequences. 
-            Defaults to 1024.
+    Dataset class for generating collaborative GPT input batches for e-commerce data.
+    Supports load and purchase interactions.
     """
     def __init__(self, tokenizer, train_mat, max_length=1024):
         super().__init__()
@@ -30,33 +26,54 @@ class CollaborativeGPTGeneratorBatch(Dataset):
         self.train_mat = train_mat
         self.max_length = max_length
         self.num_users, self.num_items = train_mat.shape
+        
+        # Check if we have separate data for purchases and loads
+        self.has_separate_interaction_types = False
+        try:
+            # Try to access potential interaction type attributes
+            if hasattr(self, 'purchase_mat') and hasattr(self, 'load_mat'):
+                self.has_separate_interaction_types = True
+        except:
+            pass
             
     def __len__(self):
         return self.num_users
 
     def __getitem__(self, idx):
-        # Tokenize the prompt
-        prompt = f"user_{idx} has interacted with"
-        return prompt, self.train_mat.getrow(idx).nonzero()[1]
+        # Tokenize the prompt with proper token format for e-commerce data
+        if self.has_separate_interaction_types:
+            # If we have separate matrices for purchases and loads
+            purchased_items = self.purchase_mat.getrow(idx).nonzero()[1]
+            loaded_items = self.load_mat.getrow(idx).nonzero()[1]
+            
+            if len(purchased_items) > 0:
+                prompt = f"<user_{idx}> has purchased"
+                return prompt, purchased_items
+            elif len(loaded_items) > 0:
+                prompt = f"<user_{idx}> has viewed/loaded"
+                return prompt, loaded_items
+            else:
+                # Fallback to generic interaction if no specific type available
+                prompt = f"<user_{idx}> has interacted with"
+                return prompt, self.train_mat.getrow(idx).nonzero()[1]
+        else:
+            # Generic case - use e-commerce language but without specific types
+            prompt = f"<user_{idx}> has purchased"  # Default to purchase for e-commerce
+            return prompt, self.train_mat.getrow(idx).nonzero()[1]
 
     def collate_fn(self, batch):
         """
         Custom collate function to encode and pad the batch of texts.
-
-        Args:
-            batch (List[Tuple[str, np.ndarray]]): 
-                List of tuples containing the prompt and item IDs.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
-                Tuple containing the encoded and padded prompt IDs,
-                main IDs, and attention masks.
         """
         prompt_texts, item_ids = zip(*batch)
-
+        # Remove debug print statement
+        print("[CollaborativeGPTGeneratorBatch] collate_fn: ", prompt_texts[0], item_ids[0])
+        
         # Encode and pad the prompt and main texts
         encoded_prompt = self.tokenizer.encode_batch(prompt_texts)
-        item_tokens = [" ".join(["item_" + str(item_id) for item_id in ids]) for ids in item_ids]
+        
+        # Use correct token format for items
+        item_tokens = [" ".join([f"<item_{item_id}>" for item_id in ids]) for ids in item_ids]
         encoded_main = self.tokenizer.encode_batch(item_tokens)
 
         # Get the prompt IDs, main IDs, and attention masks
@@ -73,10 +90,15 @@ class CollaborativeGPTGeneratorBatch(Dataset):
 
         return prompt_ids, main_ids, attention_mask
 
+'''
+Updated UserItemContentGPTDatasetBatch class to handle e-commerce review data
+with proper token formats (angle brackets)
+'''
 
 class UserItemContentGPTDatasetBatch(Dataset):
     """
     Dataset class for generating user-item content GPT input batches.
+    Modified to work with e-commerce review data and handle tokens with angle brackets.
 
     Args:
         tokenizer (TokenizerWithUserItemIDTokensBatch): 
@@ -95,6 +117,33 @@ class UserItemContentGPTDatasetBatch(Dataset):
         assert filepath.endswith(".pkl"), "we need to load from a pickle file"
         with fsspec.open(filepath, 'rb') as file:
             self.data = pickle.load(file)
+            
+        # Check and convert token format if needed
+        self._check_and_fix_token_format()
+    
+    def _check_and_fix_token_format(self):
+        """
+        Check if tokens are using the correct format (with angle brackets) and fix if needed.
+        This ensures compatibility with prompts generated by the gen_prompt file.
+        """
+        fixed_data = []
+        for prompt_text, content_text in self.data:
+            # Check if prompt contains user/item tokens without angle brackets
+            if "user_" in prompt_text and "<user_" not in prompt_text:
+                # Fix user tokens
+                prompt_text = re.sub(r'user_(\d+)', r'<user_\1>', prompt_text)
+                
+            if "item_" in prompt_text and "<item_" not in prompt_text:
+                # Fix item tokens
+                prompt_text = re.sub(r'item_(\d+)', r'<item_\1>', prompt_text)
+                
+            fixed_data.append((prompt_text, content_text))
+            
+        self.data = fixed_data
+        
+        # Log a sample to verify format
+        if len(self.data) > 0:
+            print(f"Sample UserItemContentGPTDatasetBatch prompt: {self.data[0][0]}")
 
     def __len__(self):
         return len(self.data)
@@ -102,6 +151,13 @@ class UserItemContentGPTDatasetBatch(Dataset):
     def __getitem__(self, idx):
         # Get the prompt and main texts
         prompt_text, main_text = self.data[idx][0], self.data[idx][1]
+        
+        # Make sure prompt uses e-commerce terminology if it doesn't already
+        if "has purchased" not in prompt_text and "has viewed" not in prompt_text and "writes a review" in prompt_text:
+            # Update language to e-commerce context if needed
+            # For example, convert "writes a review" to include purchase context
+            prompt_text = prompt_text.replace("writes a review for", "writes a review after purchasing")
+            
         return prompt_text, main_text
 
     def collate_fn(self, batch):
@@ -118,7 +174,10 @@ class UserItemContentGPTDatasetBatch(Dataset):
                 main IDs, and attention masks.
         """
         prompt_texts, main_texts = zip(*batch)
+        print("[UserItemContentGPTDatasetBatch] Prompt: ", prompt_texts[0])
+        print("[UserItemContentGPTDatasetBatch] Main: ", main_texts[0])
 
+        
         # Encode and pad the prompt and main texts
         encoded_prompt = self.tokenizer.encode_batch(prompt_texts)
         encoded_main = self.tokenizer.encode_batch(main_texts)
@@ -136,29 +195,16 @@ class UserItemContentGPTDatasetBatch(Dataset):
             attention_mask = attention_mask[:, :-excess_length]
 
         return prompt_ids, main_ids, attention_mask
-    
-
 class RecommendationGPTTrainGeneratorBatch(Dataset):
     """
-    Dataset class for generating recommendation GPT input batches.
-
-    Args:
-        tokenizer (TokenizerWithUserItemIDTokensBatch):
-            Custom tokenizer instance.
-        train_mat (np.ndarray): 
-            Matrix of user-item interactions.
-        max_length (int, optional): 
-            Maximum length of the encoded sequences. 
-            Defaults to 1024.
-        predict_ratio (float, optional):
-            The percentage of items to predict for each user (default: 0.2).
+    Dataset class for generating recommendation GPT input batches for e-commerce data.
     """
     def __init__(self, 
-                 tokenizer, 
-                 train_mat, 
-                 max_length=1024, 
-                 predict_ratio=0.2,
-                 shuffle=True):
+                tokenizer, 
+                train_mat, 
+                max_length=1024, 
+                predict_ratio=0.2,
+                shuffle=True):
         super().__init__()
         self.tokenizer = tokenizer
         self.train_mat = train_mat
@@ -184,9 +230,9 @@ class RecommendationGPTTrainGeneratorBatch(Dataset):
             random.shuffle(input_interactions)
         target_interactions = past_interactions
         
-        # Tokenize the input and create the target matrix
-        input_prompt = f"user_{idx} has interacted with {' '.join(['item_' + str(item_id) for item_id in input_interactions if item_id is not None])}"
-        input_prompt += f", user_{idx} will interact with"
+        # Tokenize the input with proper token format and use e-commerce specific language
+        input_prompt = f"<user_{idx}> has purchased {' '.join([f'<item_{item_id}>' for item_id in input_interactions if item_id is not None])}"
+        input_prompt += f", <user_{idx}> will also purchase"
 
         target_matrix = torch.zeros(self.num_items, dtype=torch.float32)
         target_matrix[target_interactions] = 1.0
@@ -197,22 +243,15 @@ class RecommendationGPTTrainGeneratorBatch(Dataset):
     def collate_fn(self, batch):
         """
         Custom collate function to encode and pad the batch of texts.
-
-        Args:
-            batch (List[Tuple[str, torch.Tensor]]): 
-                List of tuples containing the prompt and target matrix.
-
-        Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
-                Tuple containing the encoded and padded prompt IDs,
-                target matrix, and attention mask.
         """
         prompt_texts, target_matrices, item_ids = zip(*batch)
 
         # Encode and pad the prompt and main texts
         encoded_prompt = self.tokenizer.encode_batch(prompt_texts)
         target_matrices = torch.cat([matrix.unsqueeze(0) for matrix in target_matrices])
-        item_tokens = [" ".join(["item_" + str(item_id) for item_id in ids]) for ids in item_ids]
+        
+        # Use correct token format for items
+        item_tokens = [" ".join([f"<item_{item_id}>" for item_id in ids]) for ids in item_ids]
         encoded_main = self.tokenizer.encode_batch(item_tokens)
 
         # Get the prompt IDs, target matrices, and attention masks
