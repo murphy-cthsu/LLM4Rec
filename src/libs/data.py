@@ -245,7 +245,7 @@ class RecommendationGPTTrainGeneratorBatch(Dataset):
         Custom collate function to encode and pad the batch of texts.
         """
         prompt_texts, target_matrices, item_ids = zip(*batch)
-
+        print("[RecommendationGPTTrainGeneratorBatch] Prompt: ", prompt_texts[0])
         # Encode and pad the prompt and main texts
         encoded_prompt = self.tokenizer.encode_batch(prompt_texts)
         target_matrices = torch.cat([matrix.unsqueeze(0) for matrix in target_matrices])
@@ -271,18 +271,27 @@ class RecommendationGPTTrainGeneratorBatch(Dataset):
 
 class RecommendationGPTTestGeneratorBatch(Dataset):
     """
-    Dataset class for generating recommendation GPT input batches.
+    Dataset class for generating recommendation GPT input batches for e-commerce data.
+    This class is used during testing to evaluate recommendation performance using
+    purchase and load event data.
 
     Args:
         tokenizer (TokenizerWithUserItemIDTokensBatch):
-            Custom tokenizer instance.
+            Custom tokenizer instance that supports angle bracket tokens.
         train_mat (np.ndarray): 
-            Matrix of user-item interactions.
+            Matrix of user-item interactions from training data.
+        test_mat (np.ndarray):
+            Matrix of user-item interactions to be predicted (test data).
         max_length (int, optional): 
             Maximum length of the encoded sequences. 
             Defaults to 1024.
         predict_ratio (float, optional):
             The percentage of items to predict for each user (default: 0.2).
+        shuffle (bool, optional):
+            Whether to shuffle interaction items (default: True).
+        interaction_type (str, optional):
+            Type of e-commerce interaction to model ('purchase' or 'load').
+            Defaults to 'purchase'.
     """
     def __init__(self, 
                  tokenizer, 
@@ -290,7 +299,8 @@ class RecommendationGPTTestGeneratorBatch(Dataset):
                  test_mat,
                  max_length=1024, 
                  predict_ratio=0.2,
-                 shuffle=True):
+                 shuffle=True,
+                 interaction_type='purchase'):
         super().__init__()
         self.tokenizer = tokenizer
         self.train_mat = train_mat
@@ -299,6 +309,15 @@ class RecommendationGPTTestGeneratorBatch(Dataset):
         self.num_users, self.num_items = train_mat.shape
         self.predict_ratio = predict_ratio
         self.shuffle = shuffle
+        self.interaction_type = interaction_type
+        
+        # Check if we have separate matrices for purchases and loads
+        self.has_separate_interaction_types = False
+        try:
+            if hasattr(self, 'purchase_mat') and hasattr(self, 'load_mat'):
+                self.has_separate_interaction_types = True
+        except:
+            pass
 
     def __len__(self):
         return self.num_users
@@ -309,9 +328,18 @@ class RecommendationGPTTestGeneratorBatch(Dataset):
         if self.shuffle:
             random.shuffle(input_interactions)
         
-        # Tokenize the input and create the target matrix
-        input_prompt = f"user_{idx} has interacted with {' '.join(['item_' + str(item_id) for item_id in input_interactions])}"
-        input_prompt += f", user_{idx} will interact with"
+        # Determine the interaction verb based on the type
+        if self.interaction_type == 'load' or self.interaction_type == 'view':
+            interaction_verb = "has viewed/loaded"
+            future_verb = "will view/load"
+        else:
+            # Default to purchase
+            interaction_verb = "has purchased"
+            future_verb = "will purchase"
+        
+        # Tokenize the input with proper token format and e-commerce terminology
+        input_prompt = f"<user_{idx}> {interaction_verb} {' '.join([f'<item_{item_id}>' for item_id in input_interactions])}"
+        input_prompt += f", <user_{idx}> {future_verb}"
         
         # Obtain the training items
         train_interactions = self.train_mat.getrow(idx).nonzero()[1]
@@ -330,22 +358,23 @@ class RecommendationGPTTestGeneratorBatch(Dataset):
         Custom collate function to encode and pad the batch of texts.
 
         Args:
-            batch (List[Tuple[str, torch.Tensor]]): 
-                List of tuples containing the prompt and target matrix.
+            batch (List[Tuple[str, torch.Tensor, torch.Tensor]]): 
+                List of tuples containing the prompt, train matrix, and target matrix.
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: 
                 Tuple containing the encoded and padded prompt IDs,
-                target matrix, and attention mask.
+                train matrix, target matrix, and attention mask.
         """
         prompt_texts, train_matrices, target_matrices = zip(*batch)
-
-        # Encode and pad the prompt and main texts
+        print("[RecommendationGPTTestGeneratorBatch] Prompt: ", prompt_texts[0])
+        
+        # Encode and pad the prompt texts
         encoded_prompt = self.tokenizer.encode_batch(prompt_texts)
         train_matrices = torch.cat([matrix.unsqueeze(0) for matrix in train_matrices])
         target_matrices = torch.cat([matrix.unsqueeze(0) for matrix in target_matrices])
 
-        # Get the prompt IDs, target matrices, and attention masks
+        # Get the prompt IDs and attention masks
         prompt_ids = torch.tensor(encoded_prompt[0])
         attention_mask = torch.tensor(encoded_prompt[1])
 
@@ -357,3 +386,16 @@ class RecommendationGPTTestGeneratorBatch(Dataset):
             attention_mask = attention_mask[:, :-excess_length]
 
         return prompt_ids, train_matrices, target_matrices, attention_mask
+    
+    def set_interaction_type(self, interaction_type):
+        """
+        Set the interaction type for prompt generation.
+        
+        Args:
+            interaction_type (str): Either 'purchase' or 'load'/'view'
+        """
+        if interaction_type in ['purchase', 'load', 'view']:
+            self.interaction_type = interaction_type
+        else:
+            print(f"Warning: Unknown interaction type '{interaction_type}'. Using 'purchase' instead.")
+            self.interaction_type = 'purchase'

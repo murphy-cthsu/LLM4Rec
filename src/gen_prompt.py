@@ -712,11 +712,12 @@ def inspect_dataset(dataset_dir):
 
 if __name__ == "__main__":
     # Analyze a sample of the input CSV
-    load_and_analyze_sample_data("data/sampled_data_with_predicted_class.csv")
+    load_and_analyze_sample_data("data/cleaned_data_class_0.csv")
     
     # Process the LLM-tagged data and convert to CLLM4Rec format
     dataset_dir = convert_data_for_cllm(
-        input_csv="data/sampled_data_with_predicted_class.csv",
+        # input_csv="data/sampled_data_with_predicted_class.csv",
+        input_csv="data/cleaned_data_class_0.csv",
         output_dir="data",
         dataset_name="user_session_data",
         class_column="Class"  # Column containing LLM-generated user classifications

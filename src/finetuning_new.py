@@ -41,7 +41,7 @@ from util import Recall_at_k, NDCG_at_k
 
 # Define local directories
 data_root = "data"  # Local data directory
-local_root = "tmp"  # Temporary directory
+local_root = "checkpoints"  # Temporary directory
 
 # Create necessary directories
 os.makedirs(data_root, exist_ok=True)
@@ -193,6 +193,9 @@ def main():
     config = GPT2Config(**_config)
     config.num_users = num_users
     config.num_items = num_items
+    print("[Config] User: ",num_users)
+    print("[Config] User: ",num_items)
+
     print("Success!")
     print("-----End Setting Up the Config-----\n")
 
@@ -216,9 +219,9 @@ def main():
     '''
         Create directories for model outputs
     '''
-    content_model_dir = os.path.join(model_root, dataset, "content")
-    rec_model_dir = os.path.join(model_root, dataset, "rec")
-    collaborative_model_dir = os.path.join(model_root, dataset, "collaborative")
+    content_model_dir = os.path.join(local_root, dataset, "content")
+    rec_model_dir = os.path.join(local_root, dataset, "rec")
+    collaborative_model_dir = os.path.join(local_root, dataset, "collaborative")
     
     os.makedirs(content_model_dir, exist_ok=True)
     os.makedirs(rec_model_dir, exist_ok=True)
@@ -233,9 +236,10 @@ def main():
     # Paths for pretrained embeddings
     pretrained_user_emb_path = os.path.join(content_model_dir, f"user_embeddings_{args.lambda_V}.pt") 
     pretrained_item_emb_path = os.path.join(content_model_dir, f"item_embeddings_{args.lambda_V}.pt") 
-    
+    print("User Embedding Path: ", pretrained_user_emb_path)
     # Check if we have pretrained content embeddings and load them if available
     if os.path.exists(pretrained_user_emb_path) and os.path.exists(pretrained_item_emb_path):
+        print("Loaded User checkpoint shape:", torch.load(pretrained_user_emb_path, map_location=device)['weight'].shape)
         content_base_model.user_embeddings.load_state_dict(
             torch.load(pretrained_user_emb_path, map_location=device))
         print("Load pretrained user embeddings: Success!")
@@ -302,7 +306,7 @@ def main():
     learning_rate = 1e-4
     batch_size = 20
     val_batch_size = 256
-    num_epochs = 150
+    num_epochs = 5 #150
 
     '''
         Create the DataLoaders

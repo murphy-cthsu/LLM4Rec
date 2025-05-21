@@ -34,7 +34,7 @@ from model import CollaborativeGPTwithItemLMHeadBatch
 from model import ContentGPTForUserItemWithLMHeadBatch
 
 # Configuration for local paths
-local_root = "tmp"
+local_root = "checkpoints"
 if not os.path.exists(local_root):
     os.makedirs(local_root, exist_ok=True)
 
@@ -177,6 +177,8 @@ def main():
     config = GPT2Config(**_config)
     config.num_users = num_users
     config.num_items = num_items
+    print("[Config] User: ",num_users)
+    print("[Config] User: ",num_items)
     print("Success!")
     print("-----End Setting Up the Config-----\n")
 
@@ -211,7 +213,6 @@ def main():
         if ('user_embeddings' not in name) and \
            ('item_embeddings' not in name):
             param.requires_grad = False
-
     print("-----Trainable Parameters-----")
     for name, param in content_model.named_parameters():
         if param.requires_grad:
@@ -256,8 +257,8 @@ def main():
     print("-----Begin Setting Up the Training Details-----")
     learning_rate = 1e-3
     batch_size = 20
-    num_pretrained_epochs = 3
-    num_epochs = 5
+    num_pretrained_epochs = 2
+    num_epochs = 2
 
     '''
         Create data loaders
@@ -275,7 +276,7 @@ def main():
                                           collate_fn=collaborative_data_gen.collate_fn,
                                           shuffle=True)
     print("-----End Creating the DataLoader-----\n")
-
+    
     # Set the model to the training mode
     content_model.train()
     content_model.to(device)
@@ -348,6 +349,7 @@ def main():
             # Save user embeddings
             user_emb_path = os.path.join(content_model_root, f"user_embeddings_{lambda_V}.pt")
             torch.save(content_model.base_model.user_embeddings.state_dict(), user_emb_path)
+            print("Content Model Info: ",content_model.base_model.user_embeddings.weight.shape)
             
             # Save item embeddings
             item_emb_path = os.path.join(content_model_root, f"item_embeddings_{lambda_V}.pt")
@@ -469,10 +471,12 @@ def main():
             # Save user embeddings
             user_emb_path = os.path.join(content_model_root, f"user_embeddings_{lambda_V}.pt") 
             torch.save(content_model.base_model.user_embeddings.state_dict(), user_emb_path)
+            print("Content Model Info: ",content_model.base_model.user_embeddings.weight.shape)
             
             # Save item embeddings
             item_emb_path = os.path.join(content_model_root, f"item_embeddings_{lambda_V}.pt")
             torch.save(content_model.base_model.item_embeddings.state_dict(), item_emb_path)
+            print("Content Model Info: ",content_model.base_model.user_embeddings.weight.shape)
 
 if __name__ == "__main__":
     main()
