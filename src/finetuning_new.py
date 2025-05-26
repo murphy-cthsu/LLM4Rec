@@ -1,7 +1,7 @@
 '''
 MIT License
 Copyright (c) 2024 Yaochen Zhu
-Modified for single GPU execution without accelerator framework
+Modified for Qwen3 single GPU execution
 '''
 
 import re
@@ -23,8 +23,7 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from scipy.sparse import load_npz
 from torch.utils.data import DataLoader
-from transformers import GPT2Model, GPT2Config
-from transformers import GPT2Tokenizer
+from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer
 
 sys.path.append("src/libs")
 from tokenizer import TokenizerWithUserItemIDTokensBatch
@@ -47,38 +46,6 @@ local_root = "checkpoints"  # Temporary directory
 os.makedirs(data_root, exist_ok=True)
 os.makedirs(local_root, exist_ok=True)
 
-_config = {
-    "activation_function": "gelu_new",
-    "architectures": [
-    "GPT2LMHeadModel"
-    ],
-    "attn_pdrop": 0.1,
-    "bos_token_id": 50256,
-    "embd_pdrop": 0.1,
-    "eos_token_id": 50256,
-    "initializer_range": 0.02,
-    "layer_norm_epsilon": 1e-05,
-    "model_type": "gpt2",
-    "n_ctx": 1024,
-    "n_embd": 768,
-    "n_head": 12,
-    "n_layer": 12,
-    "n_positions": 1024,
-    "resid_pdrop": 0.1,
-    "summary_activation": None,
-    "summary_first_dropout": 0.1,
-    "summary_proj_to_labels": True,
-    "summary_type": "cls_index",
-    "summary_use_proj": True,
-    "task_specific_params": {
-    "text-generation": {
-        "do_sample": True,
-        "max_length": 50
-    }
-    },
-    "vocab_size": 50257
-}
-
 def main():
     # Set up CUDA device if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,15 +57,20 @@ def main():
     parser.add_argument("--lambda_V", type=str, default="0.01",
         help="specify the regularization parameter")
     parser.add_argument("--model_path", type=str, required=True, help="path to models directory")
+    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-1.5B",
+        help="Qwen model name or path")
     args = parser.parse_args()
-    model_root=args.model_path
+    
+    model_root = args.model_path
     dataset = args.dataset
     lambda_V = float(args.lambda_V)
+    model_name = args.model_name
     os.makedirs(model_root, exist_ok=True)
 
     print("-----Current Setting-----")
     print(f"dataset: {dataset}")
     print(f"lambda_V: {args.lambda_V}")
+    print(f"model_name: {model_name}")
     print(f"device: {device}")
     
     # Check for GPU
@@ -125,27 +97,67 @@ def main():
     print("-----End Obtaining Dataset Info-----\n")
 
     '''
-        Obtain the tokenizer with user/item tokens
+        Load Qwen model and create extended tokenizer
     '''
-    print("-----Begin Obtaining the Tokenizer-----")
-    tokenizer_root = model_root
-    print(f"Loading pretrained tokenizer from {tokenizer_root}...")
-    
-    vocab_file = os.path.join(tokenizer_root, "vocab.json")
-    merges_file = os.path.join(tokenizer_root, "merges.txt")
-    
-    # Check if tokenizer files exist
-    if not os.path.exists(vocab_file) or not os.path.exists(merges_file):
-        print("Please download the tokenizer files first!")
-        print(f"Expected locations: {vocab_file} and {merges_file}")
+    print("-----Begin Loading Qwen Model and Tokenizer-----")
+    try:
+        # Load tokenizer
+        base_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        if base_tokenizer.pad_token is None:
+            base_tokenizer.pad_token = base_tokenizer.eos_token
+        
+        # Load model
+        qwen_model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            torch_dtype=torch.float32,
+            device_map=None  # We'll move to device manually
+        )
+        
+        print(f"Successfully loaded {model_name}")
+        print(f"Original vocab size: {qwen_model.config.vocab_size}")
+        
+    except Exception as e:
+        print(f"Error loading Qwen model: {e}")
         return
-    
-    tokenizer = TokenizerWithUserItemIDTokensBatch(vocab_file, 
-                                                   merges_file,
-                                                   num_users,
-                                                   num_items)
-    print("Success!")
-    print("-----End Obtaining the Tokenizer-----\n")
+    print("-----End Loading Qwen Model and Tokenizer-----\n")
+
+    '''
+        Create extended tokenizer with user/item tokens
+    '''
+    print("-----Begin Creating Extended Tokenizer-----")
+    try:
+        extended_tokenizer = TokenizerWithUserItemIDTokensBatch(
+            model_name,
+            num_users,
+            num_items
+        )
+        
+        print(f"Successfully created extended tokenizer")
+        print(f"Extended vocab size: {len(extended_tokenizer.tokenizer)}")
+        
+        # Debug tokenizer setup
+        print("=== Tokenizer Debug Info ===")
+        print(f"PAD token ID: {extended_tokenizer.tokenizer.pad_token_id}")
+        print(f"EOS token ID: {extended_tokenizer.tokenizer.eos_token_id}")
+        
+        # Check item token range
+        item_0_token = extended_tokenizer._tokenize("<item_0>")[0]
+        item_0_id = extended_tokenizer.tokenizer.convert_tokens_to_ids([item_0_token])[0]
+        item_last_token = extended_tokenizer._tokenize(f"<item_{num_items-1}>")[0]
+        item_last_id = extended_tokenizer.tokenizer.convert_tokens_to_ids([item_last_token])[0]
+        
+        print(f"<item_0> token: '{item_0_token}' -> ID: {item_0_id}")
+        print(f"<item_{num_items-1}> token: '{item_last_token}' -> ID: {item_last_id}")
+        print(f"Item token ID range: [{item_0_id}, {item_last_id}]")
+        
+        # Store these for later use
+        extended_tokenizer.item_token_start_id = item_0_id
+        extended_tokenizer.user_token_start_id = item_0_id - num_users  # Assuming users come before items
+        
+    except Exception as e:
+        print(f"Error creating extended tokenizer: {e}")
+        return
+    print("-----End Creating Extended Tokenizer-----\n")
     
     '''
         Define the review data generator
@@ -159,7 +171,7 @@ def main():
         print(f"Review file not found at {review_path}")
         return
     
-    review_data_gen = UserItemContentGPTDatasetBatch(tokenizer, review_path)
+    review_data_gen = UserItemContentGPTDatasetBatch(extended_tokenizer, review_path)
     print("Success!")
     print("-----End Obtaining the Review Data Generator-----\n")
 
@@ -177,51 +189,38 @@ def main():
     
     # Get the training data generator
     train_mat = load_npz(train_mat_path)
-    train_data_gen = RecommendationGPTTrainGeneratorBatch(tokenizer, train_mat)
+    train_data_gen = RecommendationGPTTrainGeneratorBatch(extended_tokenizer, train_mat)
 
     # Get the validation data generator
     val_mat = load_npz(val_mat_path)
-    val_data_gen = RecommendationGPTTestGeneratorBatch(tokenizer, train_mat, val_mat)
+    val_data_gen = RecommendationGPTTestGeneratorBatch(extended_tokenizer, train_mat, val_mat)
 
     print("Success!")
     print("-----End Obtaining the Collaborative Data Generator-----\n")
 
     '''
-        Extend the config of the original GPT model
+        Extend the config of the original Qwen model
     '''
     print("-----Begin Setting Up the Config-----")
-    config = GPT2Config(**_config)
+    config = qwen_model.config
     config.num_users = num_users
     config.num_items = num_items
-    print("[Config] User: ",num_users)
-    print("[Config] User: ",num_items)
-
+    # Update vocab_size to include the extended vocabulary
+    config.vocab_size = len(extended_tokenizer.tokenizer)
+    
+    print(f"[Config] Users: {num_users}")
+    print(f"[Config] Items: {num_items}")
+    print(f"[Config] Extended vocab size: {config.vocab_size}")
     print("Success!")
     print("-----End Setting Up the Config-----\n")
-
-    '''
-        Instantiate the pretrained GPT2 model
-    '''
-    print("-----Begin Instantiating the Pretrained GPT Model-----")
-    gpt2model = GPT2Model(config)
-    pretrained_weights_path = os.path.join(model_root, "pytorch_model.bin")
-    
-    # Check if the pretrained weights file exists
-    if not os.path.exists(pretrained_weights_path):
-        print(f"Pretrained weights not found at {pretrained_weights_path}")
-        print("You need to download the pretrained GPT2 model!")
-        return
-    
-    gpt2model.load_state_dict(torch.load(pretrained_weights_path, map_location=device), strict=False)
-    print("Success!")
-    print("-----End Instantiating the Pretrained GPT Model-----\n")
     
     '''
         Create directories for model outputs
     '''
-    content_model_dir = os.path.join(local_root, dataset, "content")
-    rec_model_dir = os.path.join(local_root, dataset, "rec")
-    collaborative_model_dir = os.path.join(local_root, dataset, "collaborative")
+    model_root= os.path.join(local_root, args.model_path)
+    content_model_dir = os.path.join(model_root, dataset, "content")
+    rec_model_dir = os.path.join(model_root, dataset, "rec")
+    collaborative_model_dir = os.path.join(model_root, dataset, "collaborative")
     
     os.makedirs(content_model_dir, exist_ok=True)
     os.makedirs(rec_model_dir, exist_ok=True)
@@ -231,7 +230,7 @@ def main():
         Instantiate the GPT for recommendation content model
     '''
     print("-----Begin Instantiating the Content GPT Model-----")
-    content_base_model = GPT4RecommendationBaseModel(config, gpt2model)
+    content_base_model = GPT4RecommendationBaseModel(config, qwen_model)
     
     # Paths for pretrained embeddings
     pretrained_user_emb_path = os.path.join(content_model_dir, f"user_embeddings_{args.lambda_V}.pt") 
@@ -258,7 +257,7 @@ def main():
         Instantiate the GPT for recommendation model
     '''
     print("-----Begin Instantiating the Collaborative GPT Model-----")
-    base_model = GPT4RecommendationBaseModel(config, gpt2model)
+    base_model = GPT4RecommendationBaseModel(config, qwen_model)
 
     # Paths for pretrained embeddings
     collab_user_emb_path = os.path.join(collaborative_model_dir, f"user_embeddings_{args.lambda_V}.pt") 
@@ -281,32 +280,93 @@ def main():
     print("-----End Instantiating the Collaborative GPT Model-----\n")
 
     '''
-        Freeze the parameters of the pretrained GPT2 for content model
+        Freeze the parameters of the pretrained Qwen for both models
     '''
+    
+    def setup_content_model_gradients(content_model):
+        """
+        Proper gradient setup for content model
+        """
+        print("🔧 Setting up content model gradients...")
+        
+        # First, freeze everything
+        for param in content_model.parameters():
+            param.requires_grad = False
+        
+        # Enable gradients for specific components
+        # 1. User and item embeddings
+        content_model.base_model.user_embeddings.weight.requires_grad = True
+        content_model.base_model.item_embeddings.weight.requires_grad = True
+        print("  ✅ User/Item embeddings enabled")
+        
+        # 2. LM head (create separate trainable head)
+        if hasattr(content_model, 'lm_head'):
+            # Recreate LM head as trainable
+            embedding_dim = content_model.base_model.embedding_dim
+            vocab_size = content_model.base_model.vocab_size
+            
+            # Create new trainable LM head
+            content_model.lm_head = nn.Linear(embedding_dim, vocab_size, bias=False, 
+                                            dtype=content_model.base_model.model_dtype)
+            
+            # Initialize with existing embeddings
+            input_embeddings = content_model.base_model.qwen_model.get_input_embeddings()
+            with torch.no_grad():
+                content_model.lm_head.weight.copy_(input_embeddings.weight)
+            
+            content_model.lm_head.weight.requires_grad = True
+            print("  ✅ Separate trainable LM head created")
+        
+        # Count trainable parameters
+        trainable_params = sum(p.numel() for p in content_model.parameters() if p.requires_grad)
+        total_params = sum(p.numel() for p in content_model.parameters())
+        
+        print(f"  📊 Trainable: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
+        
+        return trainable_params > 0
+    
+    # Setup gradients for recommendation model
     for name, param in rec_model.named_parameters():
         # we allow only user/item token embeddings to be trained
         if ('user_embeddings' not in name) and \
            ('item_embeddings' not in name):
             param.requires_grad = False
 
-    print("-----Trainable Parameters-----")
+    print("-----Rec Model Trainable Parameters-----")
+    rec_trainable_count = 0
     for name, param in rec_model.named_parameters():
         if param.requires_grad:
             print("{} : {}".format(name, param.shape))
+            rec_trainable_count += param.numel()
+    print(f"Total rec trainable parameters: {rec_trainable_count:,}")
     
-    print("\n-----Non-trainable Parameters-----")
-    for name, param in rec_model.named_parameters():
-        if not param.requires_grad:
+    # Setup gradients for content model using the special function
+    content_success = setup_content_model_gradients(content_model)
+    
+    print("\n-----Content Model Trainable Parameters-----")
+    content_trainable_count = 0
+    for name, param in content_model.named_parameters():
+        if param.requires_grad:
             print("{} : {}".format(name, param.shape))
+            content_trainable_count += param.numel()
+    print(f"Total content trainable parameters: {content_trainable_count:,}")
+    
+    # Verify we have trainable parameters
+    if rec_trainable_count == 0:
+        print("❌ ERROR: No trainable parameters in rec model!")
+        return
+    if content_trainable_count == 0:
+        print("❌ ERROR: No trainable parameters in content model!")
+        return
 
     '''
         Set up the training details
     '''
     print("-----Begin Setting Up the Training Details-----")
     learning_rate = 1e-4
-    batch_size = 20
-    val_batch_size = 256
-    num_epochs = 5 #150
+    batch_size = 8  # Smaller batch size for Qwen
+    val_batch_size = 64  # Smaller validation batch size
+    num_epochs = 5
 
     '''
         Create the DataLoaders
@@ -316,17 +376,24 @@ def main():
     # Create the training data loader
     train_data_loader = DataLoader(train_data_gen, 
                                    batch_size=batch_size, 
-                                   collate_fn=train_data_gen.collate_fn)
+                                   collate_fn=train_data_gen.collate_fn,
+                                   num_workers=0)
 
     # Create the validation data loader
     val_data_loader = DataLoader(val_data_gen, 
                                  batch_size=val_batch_size, 
-                                 collate_fn=val_data_gen.collate_fn)
+                                 collate_fn=val_data_gen.collate_fn,
+                                 num_workers=0)
     
     # Create the review data loader with the custom collate_fn
     review_data_loader = DataLoader(review_data_gen, 
                                     batch_size=batch_size, 
-                                    collate_fn=review_data_gen.collate_fn)
+                                    collate_fn=review_data_gen.collate_fn,
+                                    num_workers=0)
+    
+    print(f"Train batches: {len(train_data_loader)}")
+    print(f"Val batches: {len(val_data_loader)}")
+    print(f"Review batches: {len(review_data_loader)}")
     print("-----End Creating the DataLoader-----\n")
 
     # Set the model to the training mode
@@ -334,12 +401,15 @@ def main():
     content_model.to(device)
     content_model.train()
 
-    # Obtain the optimizer
-    optimizer = optim.Adam(rec_model.parameters(), 
-                           lr=learning_rate)
+    # Obtain the optimizer with filtered parameters
+    rec_trainable_params = [p for p in rec_model.parameters() if p.requires_grad]
+    content_trainable_params = [p for p in content_model.parameters() if p.requires_grad]
     
-    review_optimizer = optim.Adam(content_model.parameters(), 
-                                  lr=learning_rate)
+    print(f"Rec optimizer will train {len(rec_trainable_params)} parameter groups")
+    print(f"Content optimizer will train {len(content_trainable_params)} parameter groups")
+    
+    optimizer = optim.Adam(rec_trainable_params, lr=learning_rate)
+    review_optimizer = optim.Adam(content_trainable_params, lr=learning_rate)
 
     # Initialize best metrics
     review_best_loss = float('inf')
@@ -374,32 +444,50 @@ def main():
             attention_mask = attention_mask.to(device)
             input_ids_main = input_ids_main.to(device)
 
-            # Get content embeddings from content model
-            with torch.no_grad():
-                content_embeds = torch.cat(
-                    (content_model.base_model.embed(input_ids),
-                     content_model.base_model.embed(input_ids_main)),
-                    axis=1
-                ).to(device)
+            try:
+                # Get content embeddings from content model
+                with torch.no_grad():
+                    content_embeds = torch.cat(
+                        (content_model.base_model.embed(input_ids),
+                         content_model.base_model.embed(input_ids_main)),
+                        axis=1
+                    ).to(device)
 
-            # Forward pass
-            outputs = rec_model(input_ids, 
-                                target_mat, 
-                                attention_mask=attention_mask,
-                                regularize=True,
-                                lambda_V=lambda_V,
-                                main_ids=input_ids_main,
-                                content_embeds=content_embeds)
-            rec_loss = outputs[0]
-            regularize_loss = outputs[1]
+                # Forward pass
+                outputs = rec_model(input_ids, 
+                                    target_mat, 
+                                    attention_mask=attention_mask,
+                                    regularize=True,
+                                    lambda_V=lambda_V,
+                                    main_ids=input_ids_main,
+                                    content_embeds=content_embeds)
+                rec_loss = outputs[0]
+                regularize_loss = outputs[1]
 
-            # Backward pass and optimization
-            rec_loss.backward()
-            optimizer.step()
+                # Check for NaN/Inf
+                if torch.isnan(rec_loss) or torch.isinf(rec_loss):
+                    print(f"⚠️  Invalid rec loss: {rec_loss}, skipping batch")
+                    continue
 
-            train_rec_loss += rec_loss.item()
-            regularize_total_loss += regularize_loss.item()
-            progress_bar.set_postfix({"Rec Loss": rec_loss.item()})
+                # Backward pass and optimization
+                rec_loss.backward()
+                
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(rec_model.parameters(), max_norm=1.0)
+                
+                optimizer.step()
+
+                train_rec_loss += rec_loss.item()
+                regularize_total_loss += regularize_loss.item()
+                progress_bar.set_postfix({"Rec Loss": rec_loss.item()})
+
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"OOM error in rec training, skipping batch...")
+                    torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise e
 
         # Calculate average losses
         train_rec_loss = train_rec_loss / len(train_data_loader)
@@ -425,21 +513,30 @@ def main():
                 target_mat = target_mat.to(device)
                 attention_mask = attention_mask.to(device)
 
-                # Get item scores and rank them
-                rec_loss, item_scores = rec_model(input_ids, 
-                                                  target_mat, 
-                                                  attention_mask)
-                
-                # Set score of interacted items to the lowest
-                item_scores[train_mat > 0] = -float("inf")  
+                try:
+                    # Get item scores and rank them
+                    rec_loss, item_scores = rec_model(input_ids, 
+                                                      target_mat, 
+                                                      attention_mask)
+                    
+                    # Set score of interacted items to the lowest
+                    item_scores[train_mat > 0] = -float("inf")  
 
-                # Calculate Recall@K and NDCG@K for each user
-                target_mat = target_mat.cpu().numpy()
-                item_scores = item_scores.cpu().numpy()
-                val_rec_loss += rec_loss.item()
-                cur_recall_20 += Recall_at_k(target_mat, item_scores, k=20, agg="sum")
-                cur_recall_40 += Recall_at_k(target_mat, item_scores, k=40, agg="sum")
-                cur_NDCG_100 += NDCG_at_k(target_mat, item_scores, k=100, agg="sum")
+                    # Calculate Recall@K and NDCG@K for each user
+                    target_mat = target_mat.cpu().numpy()
+                    item_scores = item_scores.cpu().numpy()
+                    val_rec_loss += rec_loss.item()
+                    cur_recall_20 += Recall_at_k(target_mat, item_scores, k=20, agg="sum")
+                    cur_recall_40 += Recall_at_k(target_mat, item_scores, k=40, agg="sum")
+                    cur_NDCG_100 += NDCG_at_k(target_mat, item_scores, k=100, agg="sum")
+
+                except RuntimeError as e:
+                    if "out of memory" in str(e):
+                        print(f"OOM error in validation, skipping batch...")
+                        torch.cuda.empty_cache()
+                        continue
+                    else:
+                        raise e
 
         # Calculate average metrics for the validation set
         val_rec_loss /= len(val_data_loader)
@@ -490,29 +587,57 @@ def main():
             input_ids_main = input_ids_main.to(device)
             attention_mask = attention_mask.to(device)
 
-            # Get embeddings from recommendation model
-            with torch.no_grad():
-                rec_embeds = rec_model.base_model.embed(input_ids_prompt).to(device)
+            try:
+                # Get embeddings from recommendation model
+                with torch.no_grad():
+                    rec_embeds = rec_model.base_model.embed(input_ids_prompt).to(device)
+                    
+                # Forward pass of the content GPT
+                outputs = content_model(input_ids_prompt, 
+                                        input_ids_main, 
+                                        labels_main=input_ids_main,
+                                        attention_mask=attention_mask,
+                                        regularize=True,
+                                        lambda_V=lambda_V,
+                                        collaborative_embeds=rec_embeds)
+                review_loss = outputs[0]
+                regularize_loss = outputs[1]
+
+                # Check if loss requires gradients
+                if not review_loss.requires_grad:
+                    print(f"⚠️  Review loss has no gradients, skipping batch")
+                    print(f"   Loss value: {review_loss.item()}")
+                    print(f"   Loss requires_grad: {review_loss.requires_grad}")
+                    # Debug: Check if any content model parameters require grad
+                    content_grad_params = [name for name, param in content_model.named_parameters() if param.requires_grad]
+                    print(f"   Content model grad params: {content_grad_params}")
+                    continue
+
+                # Check for NaN/Inf
+                if torch.isnan(review_loss) or torch.isinf(review_loss):
+                    print(f"⚠️  Invalid review loss: {review_loss}, skipping batch")
+                    continue
+
+                # Backward pass and optimization
+                review_loss.backward()
                 
-            # Forward pass of the content GPT
-            outputs = content_model(input_ids_prompt, 
-                                    input_ids_main, 
-                                    labels_main=input_ids_main,
-                                    attention_mask=attention_mask,
-                                    regularize=True,
-                                    lambda_V=lambda_V,
-                                    collaborative_embeds=rec_embeds)
-            review_loss = outputs[0]
-            regularize_loss = outputs[1]
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(content_model.parameters(), max_norm=1.0)
+                
+                review_optimizer.step()
 
-            # Backward pass and optimization
-            review_loss.backward()
-            review_optimizer.step()
+                review_total_loss += review_loss.item()
+                regularize_total_loss += regularize_loss.item()
+                progress_bar.set_postfix({"Review Loss": review_loss.item(),
+                                         "Regularize Loss": regularize_loss.item()})
 
-            review_total_loss += review_loss.item()
-            regularize_total_loss += regularize_loss.item()
-            progress_bar.set_postfix({"Review Loss": review_loss.item(),
-                                     "Regularize Loss": regularize_loss.item()})
+            except RuntimeError as e:
+                if "out of memory" in str(e):
+                    print(f"OOM error in content training, skipping batch...")
+                    torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise e
 
         # Calculate average losses
         review_average_loss = review_total_loss / len(review_data_loader)
@@ -535,6 +660,11 @@ def main():
             print(f"Saved best content model to {content_model_dir}")
         
     print("-----End Rec GPT Training Loop-----")
+    print(f"Training completed!")
+    print(f"Best content loss: {review_best_loss:.4f}")
+    print(f"Best recall@20: {best_recall_20:.4f}")
+    print(f"Best recall@40: {best_recall_40:.4f}")
+    print(f"Best NDCG@100: {best_NDCG_100:.4f}")
 
 
 if __name__ == "__main__":

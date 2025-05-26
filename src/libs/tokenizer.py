@@ -6,132 +6,113 @@ Modified for e-commerce data with angle bracket token format
 
 import re
 import numpy as np
-from transformers import GPT2Tokenizer
+from transformers import AutoTokenizer
 
-class TokenizerWithUserItemIDTokens(GPT2Tokenizer):
-    def __init__(self, 
-                 vocab_file, 
-                 merges_file, 
-                 num_users,
-                 num_items,
-                 **kwargs):
-        super().__init__(vocab_file=vocab_file, 
-                         merges_file=merges_file, 
-                         **kwargs)
+class TokenizerWithUserItemIDTokens:
+    def __init__(self, pretrained_model_name_or_path, num_users, num_items, **kwargs):
+        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **kwargs)
         self.num_users = num_users
         self.num_items = num_items
-        self.user_token_encoder = self._add_user_token_encoder()
-        self.item_token_encoder = self._add_item_token_encoder()
-        
-        # We add the user/item token encoders to the original vocab encoder
-        self.encoder.update(self.user_token_encoder)
-        self.encoder.update(self.item_token_encoder)
-        
-        # We add the corresponding decoders to the original vocab decoder
-        self.user_token_decoder = {v:k for k,v in self.user_token_encoder.items()}
-        self.item_token_decoder = {v:k for k,v in self.item_token_encoder.items()}
-        self.decoder.update(self.user_token_decoder)
-        self.decoder.update(self.item_token_decoder)
-        
-    
-    def _add_user_token_encoder(self):
-        # Using angle bracket format for user tokens
-        return {"<user_{}>".format(i):(i+self.vocab_size) 
-                for i in range(self.num_users)}
-    
-    def _add_item_token_encoder(self):
-        # Using angle bracket format for item tokens
-        return {"<item_{}>".format(j):(j+self.vocab_size+self.num_users)
-                for j in range(self.num_items)}
-    
+
+        self.user_tokens = [f"<user_{i}>" for i in range(num_users)]
+        self.item_tokens = [f"<item_{j}>" for j in range(num_items)]
+
+        self.tokenizer.add_tokens(self.user_tokens + self.item_tokens)
+
+        # 保存id範圍方便後續使用
+        self.vocab_size = len(self.tokenizer)
+        self.user_token_ids = [self.tokenizer.convert_tokens_to_ids(t) for t in self.user_tokens]
+        self.item_token_ids = [self.tokenizer.convert_tokens_to_ids(t) for t in self.item_tokens]
+
     def _pre_tokenize(self, text):
-        '''
-            In this function, we break down the sentence that 
-            describes user/item features or their historical 
-            interactions into pieces, where the ID word like
-            <user_i> or <item_j> is kept as a single piece. 
-            
-            E.g.,
-                text = "This is <user_1>'s comment about <item_3> 
-                        after he purchased the item"
-                pieces = ['This is', '<user_1>', "'s comment about", 
-                          '<item_3>', ' after he purchased the item']
-        '''
-        # Updated pattern to match tokens with angle brackets
+        import re
         pattern = r'(<user_\d+>|<item_\d+>)'
-        matches = re.findall(pattern, text)
         pieces = re.split(pattern, text)
-        pieces = [piece.rstrip() for piece in pieces if piece.rstrip()]
+        pieces = [p for p in pieces if p.strip()]
         return pieces
-    
+
     def _tokenize(self, text):
-        '''
-            Please note that when the token is a user/item token,
-            we don't distinguish whether it appears on the start
-            of the a sentence or not.
-        '''
         split_tokens = []
         pieces = self._pre_tokenize(text)
         for piece in pieces:
-            # If piece is a user ID
-            # piece is itself a token
-            if piece in self.user_token_encoder.keys():
+            if piece in self.user_tokens or piece in self.item_tokens:
                 split_tokens.append(piece)
-            # If piece is an item ID
-            # piece is also a token
-            elif piece in self.item_token_encoder.keys():
-                split_tokens.append(piece)
-            # If piece is a sentence
-            # Use the original tokenization to
-            # further break down piece
             else:
-                split_tokens += super()._tokenize(piece)
+                split_tokens.extend(self.tokenizer.tokenize(piece))
         return split_tokens
 
+    def encode(self, text, **kwargs):
+        tokens = self._tokenize(text)
+        return self.tokenizer.convert_tokens_to_ids(tokens)
 
-class TokenizerWithUserItemIDTokensBatch(TokenizerWithUserItemIDTokens):
-    """
-     tokenizer class that extends TokenizerWithUserItemIDTokens
-     and supports batch encoding.
-    """
-    def __init__(self, vocab_file, merges_file, num_users, num_items, **kwargs):
-        super().__init__(vocab_file=vocab_file, merges_file=merges_file,
-                         num_users=num_users, num_items=num_items, **kwargs)
-        # Set the padding token ID to 0
-        self.pad_token_id = 0
-    
     def encode_batch(self, texts, max_length=None):
-        """
-        Encodes a batch of texts into input IDs and attention masks.
-
-        Args:
-            texts (List[str]): List of input texts to be encoded.
-            max_length (int, optional): Maximum length of the encoded 
-                sequences. If None, the maximum length in the batch 
-                will be used. Defaults to None.
-
-        Returns:
-            Tuple[np.ndarray, np.ndarray]: Tuple containing the 
-                input IDs and attention masks as NumPy arrays.
-        """
         encoded_inputs = []
-        max_length_batch = max(len(self._tokenize(text)) for text in texts)
+        max_len = max(len(self._tokenize(t)) for t in texts)
+        if max_length is None or max_length < max_len:
+            max_length = max_len
+        for text in texts:
+            tokens = self._tokenize(text)
+            ids = self.tokenizer.convert_tokens_to_ids(tokens)
+            att_mask = [1]*len(ids)
+            pad_len = max_length - len(ids)
+            ids += [self.tokenizer.pad_token_id or 0]*pad_len
+            att_mask += [0]*pad_len
+            encoded_inputs.append((ids, att_mask))
+        import numpy as np
+        input_ids, attention_mask = zip(*encoded_inputs)
+        return np.array(input_ids), np.array(attention_mask)
+
+class TokenizerWithUserItemIDTokensBatch:
+    def __init__(self, pretrained_model_name_or_path, num_users, num_items, **kwargs):
+        self.tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **kwargs)
+        self.num_users = num_users
+        self.num_items = num_items
         
-        # Determine the maximum length for padding
-        if (not max_length) or max_length <= max_length_batch:
-            max_length = max_length_batch
-        
+        # 定義特殊token字串
+        self.user_tokens = [f"<user_{i}>" for i in range(num_users)]
+        self.item_tokens = [f"<item_{j}>" for j in range(num_items)]
+
+        # 新增特殊token到詞彙表
+        self.tokenizer.add_tokens(self.user_tokens + self.item_tokens)
+
+        # padding token id
+        self.pad_token_id = self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else 0
+
+    def _pre_tokenize(self, text):
+        pattern = r'(<user_\d+>|<item_\d+>)'
+        pieces = re.split(pattern, text)
+        pieces = [p for p in pieces if p.strip()]
+        return pieces
+
+    def _tokenize(self, text):
+        split_tokens = []
+        pieces = self._pre_tokenize(text)
+        for piece in pieces:
+            if piece in self.user_tokens or piece in self.item_tokens:
+                split_tokens.append(piece)
+            else:
+                split_tokens.extend(self.tokenizer.tokenize(piece))
+        return split_tokens
+
+    def convert_tokens_to_ids(self, tokens):
+        return self.tokenizer.convert_tokens_to_ids(tokens)
+
+    def encode_batch(self, texts, max_length=None):
+        encoded_inputs = []
+        max_len_in_batch = max(len(self._tokenize(t)) for t in texts)
+        if max_length is None or max_length < max_len_in_batch:
+            max_length = max_len_in_batch
+
         for text in texts:
             tokens = self._tokenize(text)
             input_ids = self.convert_tokens_to_ids(tokens)
             attention_mask = [1] * len(input_ids)
-            
-            # Pad the sequence to the max_length
-            padding_length = max_length - len(input_ids)
-            input_ids += [self.pad_token_id] * padding_length
-            attention_mask += [0] * padding_length
-            
+
+            padding_len = max_length - len(input_ids)
+            input_ids += [self.pad_token_id] * padding_len
+            attention_mask += [0] * padding_len
+
             encoded_inputs.append((input_ids, attention_mask))
-        
+
         input_ids_batch, attention_mask_batch = zip(*encoded_inputs)
         return np.array(input_ids_batch), np.array(attention_mask_batch)
