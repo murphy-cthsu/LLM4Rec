@@ -407,7 +407,7 @@ def main():
                                        labels_main=input_ids_main,
                                        attention_mask=attention_mask)
                 review_loss = outputs[0]
-                print("[Debug] Review Loss", review_loss)
+                # print("[Debug] Review Loss", review_loss)
                 # Verify loss has gradients
                 if not review_loss.requires_grad:
                     print(f"⚠️  Batch {batch_idx}: Loss has no gradients, skipping...")

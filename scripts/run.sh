@@ -1,11 +1,12 @@
-#!/bin/sh
+python src/training_new.py \
+    --dataset "user_session_data" \
+    --lambda_V 0.1 \
+    --data_path "./data" \
+    --pretrained_path "./pretrained" \
+    --model_name "Qwen/Qwen3-1.7B" 
 
-# lambda_V=1
-# dataset=beauty
-
-# accelerate launch --multi_gpu --num_processes=8 src/training.py --dataset $dataset --lambda_V $lambda_V
-# accelerate launch --multi_gpu --num_processes=8 src/finetuning.py --dataset $dataset --lambda_V $lambda_V
-# python src/predict.py --dataset $dataset --lambda_V $lambda_V
-
-python3 src/training_new.py --dataset user_session_data --lambda_V 0.1 --data_path data --pretrained_path gpt2_model
-python3 src/finetuning_new.py --dataset user_session_data --lambda_V 0.1 --model_path gpt2_model
+python src/finetuning_new.py \
+    --dataset "user_session_data" \
+    --lambda_V 0.1 \
+    --model_path "models"\
+    --model_name "Qwen/Qwen3-1.7B" 
