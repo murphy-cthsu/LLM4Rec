@@ -50,8 +50,6 @@ def main():
         help="specify the regularization parameter")
     parser.add_argument("--data_path", type=str, required=True,
         help="path to your dataset directory")
-    parser.add_argument("--pretrained_path", type=str, required=True,
-        help="path to pretrained models directory")
     parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-1.7B",
         help="Qwen model name or path")
     parser.add_argument("--use_half_precision", action="store_true",
@@ -63,7 +61,6 @@ def main():
     dataset = args.dataset
     lambda_V = args.lambda_V
     data_path = args.data_path
-    pretrained_path = args.pretrained_path
     model_name = args.model_name
     use_half_precision = args.use_half_precision
     share_base_model = args.share_base_model
@@ -72,7 +69,6 @@ def main():
     print(f"dataset: {dataset}")
     print(f"lambda_V: {lambda_V}")
     print(f"data_path: {data_path}")
-    print(f"pretrained_path: {pretrained_path}")
     print(f"model_name: {model_name}")
     print(f"use_half_precision: {use_half_precision}")
     print(f"share_base_model: {share_base_model}")
@@ -259,7 +255,6 @@ def main():
         """Setup gradients for a recommendation model"""
         print(f"🔧 Setting up gradients for {model_name}...")
         
-        # First, freeze everything
         for param in model.parameters():
             param.requires_grad = False
         
