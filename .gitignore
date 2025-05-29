@@ -3,4 +3,4 @@ venv/
 gpt2_model/
 data/user_session_data*
 checkpoints/
-data/*.csv
+*.csv
