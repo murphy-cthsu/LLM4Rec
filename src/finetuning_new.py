@@ -366,7 +366,7 @@ def main():
     learning_rate = 1e-4
     batch_size = 8  # Smaller batch size for Qwen
     val_batch_size = 64  # Smaller validation batch size
-    num_epochs = 5
+    num_epochs = 15
 
     '''
         Create the DataLoaders

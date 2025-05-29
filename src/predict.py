@@ -40,34 +40,12 @@ local_root = "checkpoints"
 if not os.path.exists(local_root):
     os.makedirs(local_root, exist_ok=True)
 
-def main():
+def predict(dataset,lambda_V,data_path,model_name,use_half_precision,model_type):
     # Use regular device setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Parse the command line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, required=True,
-        help="specify the dataset for experiment")
-    parser.add_argument("--lambda_V", type=float, required=True,
-        help="specify the regularization parameter")
-    parser.add_argument("--data_path", type=str, required=True,
-        help="path to your dataset directory")
-    parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-1.7B",
-        help="Qwen model name or path")
-    parser.add_argument("--use_half_precision", action="store_true",
-        help="Use half precision (fp16) for memory efficiency")
-    parser.add_argument("--model_type", type=str, choices=["content", "collaborative","rec"], 
-                       default="rec",
-                       help="Which model to use for prediction")
-    args = parser.parse_args()
-    
-    dataset = args.dataset
-    lambda_V = args.lambda_V
-    data_path = args.data_path
-    model_name = args.model_name
-    use_half_precision = args.use_half_precision
-    model_type = args.model_type
+   
     
     print("-----Current Setting-----")
     print(f"dataset: {dataset}")
@@ -174,6 +152,7 @@ def main():
     # Get the testing data generator
     train_mat = load_npz(train_mat_path)
     test_mat = load_npz(test_mat_path)
+    print(test_mat.shape)
     test_data_gen = RecommendationGPTTestGeneratorBatch(extended_tokenizer, train_mat, test_mat)
 
     print("Success!")
@@ -325,16 +304,44 @@ def main():
     print(f"NDCG@100: {final_NDCG_100:.4f}")
     print(f"Total samples evaluated: {total_samples}")
     
+    return final_recall_20, final_recall_40, final_NDCG_100
     # Save results
-    results_dir = os.path.join(local_root, "results", dataset)
-    os.makedirs(results_dir, exist_ok=True)
-    results_path = os.path.join(results_dir, f"results_{model_type}_{lambda_V}.txt")
+    # results_dir = os.path.join(local_root, "results", dataset)
+    # os.makedirs(results_dir, exist_ok=True)
+    # results_path = os.path.join(results_dir, f"results_{model_type}_{lambda_V}.txt")
     
-    with open(results_path, "w") as f:
-        f.write("Model_Type,Lambda_V,Recall@20,Recall@40,NDCG@100,Total_Samples\n")
-        f.write(f"{model_type},{lambda_V},{final_recall_20:.4f},{final_recall_40:.4f},{final_NDCG_100:.4f},{total_samples}\n")
+    # with open(results_path, "w") as f:
+    #     f.write("Model_Type,Lambda_V,Recall@20,Recall@40,NDCG@100,Total_Samples\n")
+    #     f.write(f"{model_type},{lambda_V},{final_recall_20:.4f},{final_recall_40:.4f},{final_NDCG_100:.4f},{total_samples}\n")
     
-    print(f"Results saved to: {results_path}")
+    # print(f"Results saved to: {results_path}")
+def main():
+     # Parse the command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, required=True,
+        help="specify the dataset for experiment") #user_session_data_0
+    parser.add_argument("--lambda_V", type=float, required=True,
+        help="specify the regularization parameter") # 0.1
+    parser.add_argument("--data_path", type=str, required=True,
+        help="path to your dataset directory") # data/
+    parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-1.7B",
+        help="Qwen model name or path")
+    parser.add_argument("--use_half_precision", action="store_true",
+        help="Use half precision (fp16) for memory efficiency")
+    parser.add_argument("--model_type", type=str, choices=["content", "collaborative","rec"], 
+                       default="rec",
+                       help="Which model to use for prediction")
+    args = parser.parse_args()
+    
+    dataset = args.dataset
+    lambda_V = args.lambda_V
+    data_path = args.data_path
+    model_name = args.model_name
+    use_half_precision = args.use_half_precision
+    model_type = args.model_type
+
+    recall_20,recall_40, ndcg = predict(dataset, lambda_V,data_path,model_name, use_half_precision, model_type)
+    # print("ndcg returned: ", ndcg)
 
 if __name__ == "__main__":
     main()

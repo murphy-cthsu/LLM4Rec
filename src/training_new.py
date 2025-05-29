@@ -308,8 +308,8 @@ def main():
     # Adjust learning rate and batch size for Qwen3
     learning_rate = 1e-3  # Slightly lower learning rate for larger model
     batch_size = 8 if use_half_precision else 8 # Smaller batch size for larger model
-    num_pretrained_epochs = 2
-    num_epochs = 2
+    num_pretrained_epochs = 3
+    num_epochs = 3
     
     # Add gradient accumulation for effective larger batch size
     gradient_accumulation_steps = 4
@@ -402,7 +402,8 @@ def main():
 
             try:
                 # Forward pass
-                outputs = content_model(input_ids_prompt, 
+                outputs = content_model
+                (input_ids_prompt, 
                                        input_ids_main, 
                                        labels_main=input_ids_main,
                                        attention_mask=attention_mask)
