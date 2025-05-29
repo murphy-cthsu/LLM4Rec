@@ -37,33 +37,9 @@ local_root = "checkpoints"
 if not os.path.exists(local_root):
     os.makedirs(local_root, exist_ok=True)
 
-def main():
+def train_one_data(dataset, lambda_V, data_path, model_name, use_half_precision, share_base_model,device, num_epochs=1, num_pretrained_epochs=1):
     # Use regular device setup rather than Accelerator
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
     
-    # Parse the command line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, required=True,
-        help="specify the dataset for experiment")
-    parser.add_argument("--lambda_V", type=float, required=True,
-        help="specify the regularization parameter")
-    parser.add_argument("--data_path", type=str, required=True,
-        help="path to your dataset directory")
-    parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-1.7B",
-        help="Qwen model name or path")
-    parser.add_argument("--use_half_precision", action="store_true",
-        help="Use half precision (fp16) for memory efficiency")
-    parser.add_argument("--share_base_model", action="store_true",
-        help="Share base model between content and collaborative models to save memory")
-    args = parser.parse_args()
-    
-    dataset = args.dataset
-    lambda_V = args.lambda_V
-    data_path = args.data_path
-    model_name = args.model_name
-    use_half_precision = args.use_half_precision
-    share_base_model = args.share_base_model
     
     print("-----Current Setting-----")
     print(f"dataset: {dataset}")
@@ -72,6 +48,9 @@ def main():
     print(f"model_name: {model_name}")
     print(f"use_half_precision: {use_half_precision}")
     print(f"share_base_model: {share_base_model}")
+    print(f"num_epochs: {num_epochs}")
+    print(f"num_pretrained_epochs: {num_pretrained_epochs}")
+    
     
     # Check if GPU is available
     if torch.cuda.is_available():
@@ -308,8 +287,8 @@ def main():
     # Adjust learning rate and batch size for Qwen3
     learning_rate = 1e-3  # Slightly lower learning rate for larger model
     batch_size = 8 if use_half_precision else 8 # Smaller batch size for larger model
-    num_pretrained_epochs = 3
-    num_epochs = 3
+    # num_pretrained_epochs = 3
+    # num_epochs = 3
     
     # Add gradient accumulation for effective larger batch size
     gradient_accumulation_steps = 4
@@ -402,8 +381,7 @@ def main():
 
             try:
                 # Forward pass
-                outputs = content_model
-                (input_ids_prompt, 
+                outputs = content_model(input_ids_prompt, 
                                        input_ids_main, 
                                        labels_main=input_ids_main,
                                        attention_mask=attention_mask)
@@ -647,9 +625,49 @@ def main():
             print(f"Saved best content model with loss: {review_best_loss:.4f}")
 
     print("-----End Iterative Training Loop-----")
-    print(f"Training completed!")
+    print(f"Training {dataset} completed!")
     print(f"Best content loss: {review_best_loss:.4f}")
     print(f"Best collaborative loss: {collaborative_best_loss:.4f}")
+
+def train (num_data,lambda_V, data_path, use_half_precision, share_base_model, device,  model_name="Qwen/Qwen3-1.7B", num_epochs=1, num_pretrained_epochs=1):
+    for i in range(num_data):
+        dataset=f"user_session_data_{i}"
+        try:
+            train_one_data(dataset, lambda_V, data_path, model_name, use_half_precision, share_base_model, device, num_epochs, num_pretrained_epochs)
+        except Exception as e:
+            print(f"An error occurred during training {dataset}: {e} ")
+            sys.exit(1)
+    
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+    
+    # Parse the command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_data", type=int, default=1,
+        help="specify the number of dataset for experiment")
+    parser.add_argument("--lambda_V", type=float, required=True,
+        help="specify the regularization parameter")
+    parser.add_argument("--data_path", type=str, required=True,
+        help="path to your dataset directory")
+    parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-1.7B",
+        help="Qwen model name or path")
+    parser.add_argument("--use_half_precision", action="store_true",
+        help="Use half precision (fp16) for memory efficiency")
+    parser.add_argument("--share_base_model", action="store_true",
+        help="Share base model between content and collaborative models to save memory")
+    args = parser.parse_args()
+    num_data = args.num_data
+    # dataset = args.dataset
+    lambda_V = args.lambda_V
+    data_path = args.data_path
+    model_name = args.model_name
+    use_half_precision = args.use_half_precision
+    share_base_model = args.share_base_model
+    num_epochs = 1
+    num_pretrained_epochs = 1
+    train(num_data, lambda_V, data_path, use_half_precision, share_base_model, device,model_name, num_epochs, num_pretrained_epochs)
+    print("Training script completed successfully!")
 
 if __name__ == "__main__":
     main()

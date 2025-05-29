@@ -713,8 +713,12 @@ def inspect_dataset(dataset_dir):
 if __name__ == "__main__":
     # Analyze a sample of the input CSV
     for i in range (10):
+        file_path=f"data/cleaned_data_class_{i}.csv"
+        if not os.path.exists(file_path):
+            print(f"File {file_path} does not exist.")
+            continue
         load_and_analyze_sample_data(f"data/cleaned_data_class_{i}.csv")
-        
+
         # Process the LLM-tagged data and convert to CLLM4Rec format
         dataset_dir = convert_data_for_cllm(
             # input_csv="data/sampled_data_with_predicted_class.csv",

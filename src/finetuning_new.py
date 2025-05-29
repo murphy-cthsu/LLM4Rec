@@ -46,32 +46,14 @@ local_root = "checkpoints"  # Temporary directory
 os.makedirs(data_root, exist_ok=True)
 os.makedirs(local_root, exist_ok=True)
 
-def main():
-    # Set up CUDA device if available
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Parse the command line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="amazon",
-        help="specify the dataset for experiment")
-    parser.add_argument("--lambda_V", type=str, default="0.01",
-        help="specify the regularization parameter")
-    parser.add_argument("--model_path", type=str, required=True, help="path to models directory")
-    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-1.5B",
-        help="Qwen model name or path")
-    args = parser.parse_args()
-    
-    model_root = args.model_path
-    dataset = args.dataset
-    lambda_V = float(args.lambda_V)
-    model_name = args.model_name
-    os.makedirs(model_root, exist_ok=True)
-
+def finetune_one_data(dataset, lambda_V, model_name, model_path, device, num_epochs=2):
     print("-----Current Setting-----")
     print(f"dataset: {dataset}")
-    print(f"lambda_V: {args.lambda_V}")
+    print(f"lambda_V: {lambda_V}")
     print(f"model_name: {model_name}")
     print(f"device: {device}")
+    print(f"model_path: {model_path}")
+    print(f"num_epochs: {num_epochs}")
     
     # Check for GPU
     if torch.cuda.is_available():
@@ -217,7 +199,7 @@ def main():
     '''
         Create directories for model outputs
     '''
-    model_root= os.path.join(local_root, args.model_path)
+    model_root= os.path.join(local_root, model_path)
     content_model_dir = os.path.join(model_root, dataset, "content")
     rec_model_dir = os.path.join(model_root, dataset, "rec")
     collaborative_model_dir = os.path.join(model_root, dataset, "collaborative")
@@ -233,8 +215,8 @@ def main():
     content_base_model = GPT4RecommendationBaseModel(config, qwen_model)
     
     # Paths for pretrained embeddings
-    pretrained_user_emb_path = os.path.join(content_model_dir, f"user_embeddings_{args.lambda_V}.pt") 
-    pretrained_item_emb_path = os.path.join(content_model_dir, f"item_embeddings_{args.lambda_V}.pt") 
+    pretrained_user_emb_path = os.path.join(content_model_dir, f"user_embeddings_{lambda_V}.pt") 
+    pretrained_item_emb_path = os.path.join(content_model_dir, f"item_embeddings_{lambda_V}.pt") 
     print("User Embedding Path: ", pretrained_user_emb_path)
     # Check if we have pretrained content embeddings and load them if available
     if os.path.exists(pretrained_user_emb_path) and os.path.exists(pretrained_item_emb_path):
@@ -260,8 +242,8 @@ def main():
     base_model = GPT4RecommendationBaseModel(config, qwen_model)
 
     # Paths for pretrained embeddings
-    collab_user_emb_path = os.path.join(collaborative_model_dir, f"user_embeddings_{args.lambda_V}.pt") 
-    collab_item_emb_path = os.path.join(collaborative_model_dir, f"item_embeddings_{args.lambda_V}.pt") 
+    collab_user_emb_path = os.path.join(collaborative_model_dir, f"user_embeddings_{lambda_V}.pt") 
+    collab_item_emb_path = os.path.join(collaborative_model_dir, f"item_embeddings_{lambda_V}.pt") 
     
     # Check if we have pretrained collaborative embeddings and load them if available
     if os.path.exists(collab_user_emb_path) and os.path.exists(collab_item_emb_path):
@@ -366,7 +348,7 @@ def main():
     learning_rate = 1e-4
     batch_size = 8  # Smaller batch size for Qwen
     val_batch_size = 64  # Smaller validation batch size
-    num_epochs = 15
+    # num_epochs = 15
 
     '''
         Create the DataLoaders
@@ -559,11 +541,11 @@ def main():
         if cur_sum > best_sum:
             best_sum = cur_sum
             # Save user embeddings
-            user_emb_path = os.path.join(rec_model_dir, f"user_embeddings_{args.lambda_V}.pt")
+            user_emb_path = os.path.join(rec_model_dir, f"user_embeddings_{lambda_V}.pt")
             torch.save(rec_model.base_model.user_embeddings.state_dict(), user_emb_path)
 
             # Save item embeddings
-            item_emb_path = os.path.join(rec_model_dir, f"item_embeddings_{args.lambda_V}.pt")
+            item_emb_path = os.path.join(rec_model_dir, f"item_embeddings_{lambda_V}.pt")
             torch.save(rec_model.base_model.item_embeddings.state_dict(), item_emb_path)
             print(f"Saved best rec model to {rec_model_dir}")
 
@@ -651,20 +633,54 @@ def main():
             review_best_loss = review_average_loss
 
             # Save user embeddings
-            user_emb_path = os.path.join(content_model_dir, f"user_embeddings_{args.lambda_V}.pt") 
+            user_emb_path = os.path.join(content_model_dir, f"user_embeddings_{lambda_V}.pt") 
             torch.save(content_model.base_model.user_embeddings.state_dict(), user_emb_path)
             
             # Save item embeddings
-            item_emb_path = os.path.join(content_model_dir, f"item_embeddings_{args.lambda_V}.pt")
+            item_emb_path = os.path.join(content_model_dir, f"item_embeddings_{lambda_V}.pt")
             torch.save(content_model.base_model.item_embeddings.state_dict(), item_emb_path)
             print(f"Saved best content model to {content_model_dir}")
         
     print("-----End Rec GPT Training Loop-----")
-    print(f"Training completed!")
+    print(f"Training {dataset} completed!")
     print(f"Best content loss: {review_best_loss:.4f}")
     print(f"Best recall@20: {best_recall_20:.4f}")
     print(f"Best recall@40: {best_recall_40:.4f}")
     print(f"Best NDCG@100: {best_NDCG_100:.4f}")
+def finetune(num_dataset, lambda_V, device, model_name="Qwen/Qwen3-1.7B",model_path="models", num_epochs=2):
+    for i in range(num_dataset):
+        print(f"-----Finetuning dataset {i + 1}/{num_dataset}-----")
+        try :
+            finetune_one_data(f"user_session_data_{i}", lambda_V, model_name, model_path, device, num_epochs)
+        except Exception as e:
+            print(f"Error during finetuning dataset {i + 1}: {e}")
+            print("Skipping to next dataset...")
+            continue
+        print(f"-----Finished dataset {i + 1}/{num_dataset}-----\n")
+    print("-----All datasets finetuned successfully!-----\n")
+
+def main():
+    # Set up CUDA device if available
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Parse the command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_dataset", type=int, default= 1 ,
+        help="specify the dataset for experiment")
+    parser.add_argument("--lambda_V", type=str, default="0.01",
+        help="specify the regularization parameter")
+    parser.add_argument("--model_path", type=str, default="models", help="path to models directory")
+    parser.add_argument("--model_name", type=str, default="Qwen/Qwen3-1.7B",
+        help="Qwen model name or path")
+    args = parser.parse_args()
+    num_dataset = args.num_dataset
+    model_root = args.model_path
+    lambda_V = float(args.lambda_V)
+    model_name = args.model_name
+    print(f"Model root directory: {model_root}")
+    print(f"Using model: {model_name}")
+    num_epochs=2
+    finetune(num_dataset, lambda_V, device, num_epochs=num_epochs, model_name=model_name, model_path=model_root)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,11 @@
 import pandas as pd
-
+import os
 # Load the CSV file
-for i in range (1):
+for i in range (10):
     file_path = f"sampled_data_with_predicted_class_reduced_{i}.csv"
+    if not os.path.exists(file_path):
+        print(f"File {file_path} does not exist.")
+        continue
     df = pd.read_csv(file_path)
 
     # Filter out rows where the 'Class' column is 'Failed Prediction'
